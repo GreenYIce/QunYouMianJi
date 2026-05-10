@@ -316,6 +316,95 @@
         hr {
             margin: 12px 0;
         }
+
+        .delete-account-btn {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+            padding: 8px 16px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+            margin-left: 8px;
+        }
+
+        .delete-account-btn:hover {
+            background: #fecaca;
+        }
+
+        .danger-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 40px;
+            padding: 10px 20px;
+            width: 100%;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .danger-btn:hover {
+            background: #b91c1c;
+        }
+
+        .small-delete-btn {
+            background: none;
+            border: none;
+            color: #dc2626;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 8px;
+            border-radius: 50%;
+            transition: 0.15s;
+            float: right;
+        }
+
+        .small-delete-btn:hover {
+            background: #fef2f2;
+        }
+
+        .bind-btn {
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 4px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 4px;
+            transition: 0.15s;
+        }
+
+        .bind-btn:hover {
+            background: #d97706;
+        }
+
+        .unbound-record {
+            background: #fffbeb;
+            border: 1px dashed #fcd34d;
+            margin: 8px 0;
+            padding: 10px;
+            border-radius: 20px;
+        }
+
+        .confirm-warning {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 16px;
+            padding: 12px;
+            margin: 12px 0;
+            color: #991b1b;
+            font-size: 13px;
+        }
+
+        .meeting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 0;
+        }
     </style>
 </head>
 <body>
@@ -343,6 +432,7 @@
             </div>
             <button id="editProfileBtn" class="edit-btn"><i class="fas fa-pen"></i> 编辑资料</button>
             <button id="logoutBtn" class="logout-btn"><i class="fas fa-sign-out-alt"></i> 切换账号</button>
+            <button id="deleteAccountBtn" class="delete-account-btn"><i class="fas fa-trash-alt"></i> 删除账号</button>
         </div>
         <div style="font-size:14px;"><i class="fas fa-chalkboard-user"></i> 点击节点/连线查看详情</div>
     </div>
@@ -362,10 +452,17 @@
                 <h3><i class="fas fa-handshake"></i> 记录新面基</h3>
                 <select id="targetUserSelect" class="friend-select">
                     <option value="">选择面基对象</option>
+                    <option value="__unbound__">📌 暂不绑定群友 (稍后绑定)</option>
                 </select>
                 <input type="date" id="meetDate" value="">
                 <textarea id="meetNotes" rows="2" placeholder="备注 (地点/趣事等)"></textarea>
                 <button id="addMeetRecordBtn" class="primary"><i class="fas fa-plus-circle"></i> 添加面基记录</button>
+            </div>
+
+            <!-- 待绑定面基记录 -->
+            <div class="panel-card" id="unboundMeetsCard">
+                <h3><i class="fas fa-clock"></i> 待绑定面基记录</h3>
+                <div id="unboundMeetsList" class="record-list" style="max-height:200px;">暂无待绑定记录</div>
             </div>
             
             <!-- 我的面基记录 (与我相关的所有面基) -->
@@ -417,6 +514,7 @@ const firebaseConfig = {
     let currentUserData = null;  // {nickname, avatarColor}
     let allUsersMap = new Map();  // username -> {nickname, avatarColor}
     let allRelations = [];        // 关系列表 {id, user1, user2, meetings: [{date, notes}]}
+    let allPendingMeets = [];    // 待绑定面基记录 {id, userId, date, notes}
     let chartInstance = null;
 
     // 辅助函数: 生成随机浅色背景
@@ -543,13 +641,53 @@ const firebaseConfig = {
     function showRelationDetailModal(relation) {
         const userA = allUsersMap.get(relation.user1)?.nickname || relation.user1;
         const userB = allUsersMap.get(relation.user2)?.nickname || relation.user2;
-        let meetingsHtml = `<ul style="margin-top:8px;">`;
-        (relation.meetings || []).forEach(m => {
-            meetingsHtml += `<li>📅 ${m.date || '无日期'} — ${m.notes || '无备注'}</li>`;
+        const isMyRelation = (relation.user1 === currentUser || relation.user2 === currentUser);
+        let meetingsHtml = '';
+        (relation.meetings || []).forEach((m, idx) => {
+            let deleteBtn = '';
+            if (isMyRelation) {
+                deleteBtn = `<button class="small-delete-btn detail-meeting-delete" data-relid="${relation.id}" data-meetidx="${idx}" title="删除该条记录"><i class="fas fa-times"></i></button>`;
+            }
+            meetingsHtml += `<div class="meeting-item">
+                <span>📅 ${m.date || '无日期'} — ${m.notes || '无备注'}</span>
+                ${deleteBtn}
+            </div>`;
         });
-        meetingsHtml += `</ul>`;
-        const content = `<div><strong>${userA}</strong> 与 <strong>${userB}</strong> 的面基记录 (${relation.meetings?.length || 0}次)</div>${meetingsHtml}`;
+        const content = `<div><strong>${userA}</strong> 与 <strong>${userB}</strong> 的面基记录 (${relation.meetings?.length || 0}次)</div>
+            <div style="margin-top:10px;">${meetingsHtml}</div>
+            ${isMyRelation ? `<button id="deleteEntireRelationBtn" class="danger-btn" style="margin-top:12px;"><i class="fas fa-trash-alt"></i> 删除全部记录</button>` : ''}`;
         showModal("连线详情", content);
+        // 绑定单条删除按钮
+        setTimeout(() => {
+            document.querySelectorAll('.detail-meeting-delete').forEach(btn => {
+                btn.onclick = async (e) => {
+                    e.stopPropagation();
+                    const relId = btn.getAttribute('data-relid');
+                    const meetIdx = parseInt(btn.getAttribute('data-meetidx'));
+                    if (confirm(`确定要删除这条面基记录吗？`)) {
+                        await deleteMeetupRecord(relId, meetIdx);
+                        // 关闭并刷新模态框
+                        const modal = btn.closest('.modal');
+                        if (modal) modal.remove();
+                        const updatedRel = allRelations.find(r => r.id === relId);
+                        if (updatedRel) {
+                            showRelationDetailModal(updatedRel);
+                        }
+                    }
+                };
+            });
+            // 绑定删除全部按钮
+            const deleteAllBtn = document.getElementById('deleteEntireRelationBtn');
+            if (deleteAllBtn) {
+                deleteAllBtn.onclick = async () => {
+                    if (confirm(`确定要删除与对方的全部面基记录吗？此操作不可撤销。`)) {
+                        const modal = deleteAllBtn.closest('.modal');
+                        await deleteEntireRelation(relation.id);
+                        if (modal) modal.remove();
+                    }
+                };
+            }
+        }, 50);
     }
 
     function showModal(title, bodyHtml) {
@@ -585,6 +723,14 @@ const firebaseConfig = {
             const data = doc.data();
             allRelations.push({ id: doc.id, ...data });
         });
+        // 获取当前用户的待绑定记录
+        allPendingMeets = [];
+        if (currentUser) {
+            const pendingSnap = await db.collection("pendingMeets").where("userId", "==", currentUser).get();
+            pendingSnap.forEach(doc => {
+                allPendingMeets.push({ id: doc.id, ...doc.data() });
+            });
+        }
         // 更新界面组件
         updateUIComponents();
         await renderGraph();
@@ -605,6 +751,7 @@ const firebaseConfig = {
             const avatarStyle = `background:${data.avatarColor || '#ccc'}; display:inline-block; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; color:white; margin-right:8px; font-size:14px;`;
             usersHtml += `<div class="user-badge" data-uid="${uid}"><span style="${avatarStyle}">${getAvatarChar(data.nickname || uid)}</span> ${data.nickname || uid}</div>`;
         }
+        optionsHtml += '<option value="__unbound__">📌 暂不绑定群友 (稍后绑定)</option>';
         targetSelect.innerHTML = optionsHtml;
         allUsersListDiv.innerHTML = usersHtml || "<div>暂无其他群友</div>";
         // 绑定点击用户badge快捷查看
@@ -627,18 +774,97 @@ const firebaseConfig = {
                 const count = rel.meetings?.length || 0;
                 const lastMeet = rel.meetings?.length ? rel.meetings[rel.meetings.length-1] : null;
                 html += `<div class="record-item" data-relid="${rel.id}">
-                            <strong>👥 ${otherInfo.nickname || other}</strong> (${count}次)<br>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <strong>👥 ${otherInfo.nickname || other}</strong> (${count}次)
+                                <div>
+                                    <button class="small-delete-btn relation-delete-btn" data-relid="${rel.id}" title="删除整段面基关系"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                            </div>
                             <small>${lastMeet ? `最近: ${lastMeet.date} ${lastMeet.notes || ''}` : ''}</small>
                          </div>`;
             }
             myMeetDiv.innerHTML = html;
+            // 绑定关系删除按钮
+            document.querySelectorAll('.relation-delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const relId = btn.getAttribute('data-relid');
+                    const relation = allRelations.find(r => r.id === relId);
+                    const other = relation ? (relation.user1 === currentUser ? relation.user2 : relation.user1) : '';
+                    const otherName = allUsersMap.get(other)?.nickname || other || '对方';
+                    showConfirmModal('删除面基关系',
+                        `<div class="confirm-warning">⚠️ 将删除你与 <strong>${otherName}</strong> 的全部面基记录 (${relation?.meetings?.length || 0} 次)</div>`,
+                        async () => { await deleteEntireRelation(relId); }
+                    );
+                });
+            });
+            // 点击查看详情
             document.querySelectorAll('.record-item').forEach(el => {
                 el.addEventListener('click', (e) => {
+                    if (e.target.closest('button')) return;
                     const relId = el.getAttribute('data-relid');
                     const relation = allRelations.find(r => r.id === relId);
                     if(relation) showRelationDetailModal(relation);
                 });
             });
+        }
+
+        // 显示待绑定面基记录
+        const unboundDiv = document.getElementById("unboundMeetsList");
+        if (allPendingMeets.length === 0) {
+            unboundDiv.innerHTML = "<div style='color:gray;'>暂无待绑定记录</div>";
+        } else {
+            let html = '';
+            // 收集所有其他用户供绑定选择
+            let otherUserOptions = '';
+            for (let [uid, data] of allUsersMap.entries()) {
+                if (uid !== currentUser) {
+                    otherUserOptions += `<option value="${uid}">${data.nickname || uid}</option>`;
+                }
+            }
+            for (let pm of allPendingMeets) {
+                html += `<div class="unbound-record" data-pendingid="${pm.id}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:13px;">📅 ${pm.date || '无日期'} | ${pm.notes || '无备注'}</span>
+                        <button class="small-delete-btn" data-pendingid="${pm.id}" title="删除待绑定记录"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                    <div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
+                        <select class="bind-select" data-pendingid="${pm.id}" style="flex:1; font-size:12px; padding:4px 8px; border-radius:16px;">
+                            <option value="">选择绑定群友</option>
+                            ${otherUserOptions}
+                        </select>
+                        <button class="bind-btn bind-confirm-btn" data-pendingid="${pm.id}"><i class="fas fa-link"></i> 绑定</button>
+                    </div>
+                </div>`;
+            }
+            unboundDiv.innerHTML = html;
+            // 绑定删除待绑定记录按钮
+            document.querySelectorAll('#unboundMeetsList .small-delete-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const pid = btn.getAttribute('data-pendingid');
+                    await deletePendingMeetup(pid);
+                });
+            });
+            // 绑定"绑定"按钮
+            document.querySelectorAll('#unboundMeetsList .bind-confirm-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const pid = btn.getAttribute('data-pendingid');
+                    const select = document.querySelector(`.bind-select[data-pendingid="${pid}"]`);
+                    const targetUser = select ? select.value : '';
+                    if (!targetUser) { alert("请先选择一个群友再绑定"); return; }
+                    await bindMeetupToUser(pid, targetUser);
+                });
+            });
+        }
+
+        // 如果没有待绑定记录则隐藏该卡片
+        const unboundCard = document.getElementById("unboundMeetsCard");
+        if (allPendingMeets.length === 0) {
+            unboundCard.style.display = 'none';
+        } else {
+            unboundCard.style.display = '';
         }
     }
 
@@ -752,6 +978,133 @@ const firebaseConfig = {
         }
     }
 
+    // ---------- 删除功能 ----------
+    function showConfirmModal(title, message, onConfirm) {
+        const modalDiv = document.createElement('div');
+        modalDiv.className = 'modal';
+        modalDiv.innerHTML = `
+            <div class="modal-content">
+                <h3>${title}</h3>
+                <hr>
+                <div>${message}</div>
+                <div style="margin-top:16px; display:flex; gap:12px;">
+                    <button id="confirmCancelBtn" style="flex:1; background:#e2e8f0; border:none; border-radius:40px; padding:10px; cursor:pointer;">取消</button>
+                    <button id="confirmOkBtn" style="flex:1;" class="danger-btn">确认删除</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modalDiv);
+        modalDiv.querySelector('#confirmCancelBtn').onclick = () => modalDiv.remove();
+        modalDiv.querySelector('#confirmOkBtn').onclick = async () => {
+            modalDiv.remove();
+            await onConfirm();
+        };
+        modalDiv.addEventListener('click', (e) => { if(e.target === modalDiv) modalDiv.remove(); });
+    }
+
+    // 删除单条面基记录
+    async function deleteMeetupRecord(relationId, meetingIndex) {
+        if (!db) return;
+        const relationRef = db.collection("relations").doc(relationId);
+        const docSnap = await relationRef.get();
+        if (!docSnap.exists) return;
+        let meetings = docSnap.data().meetings || [];
+        if (meetingIndex < 0 || meetingIndex >= meetings.length) return;
+        meetings.splice(meetingIndex, 1);
+        if (meetings.length === 0) {
+            await relationRef.delete();
+        } else {
+            await relationRef.update({ meetings: meetings });
+        }
+        await loadAllData();
+    }
+
+    // 删除整段面基关系
+    async function deleteEntireRelation(relationId) {
+        if (!db) return;
+        await db.collection("relations").doc(relationId).delete();
+        await loadAllData();
+    }
+
+    // 删除账号
+    async function deleteAccount() {
+        if (!db || !currentUser) return;
+        // 删除所有涉及当前用户的关系
+        const relSnap = await db.collection("relations").get();
+        const batch = db.batch();
+        let deleteCount = 0;
+        relSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.user1 === currentUser || data.user2 === currentUser) {
+                batch.delete(doc.ref);
+                deleteCount++;
+            }
+        });
+        // 删除待绑定记录
+        const pendingSnap = await db.collection("pendingMeets").where("userId", "==", currentUser).get();
+        pendingSnap.forEach(doc => {
+            batch.delete(doc.ref);
+            deleteCount++;
+        });
+        // 删除用户文档
+        batch.delete(db.collection("users").doc(currentUser));
+        await batch.commit();
+        alert("账号已删除，相关的 " + deleteCount + " 条记录已被清理。");
+        logout();
+    }
+
+    // ---------- 待绑定面基记录 ----------
+    // 添加一条待绑定面基记录
+    async function addUnboundMeetup(date, notes) {
+        if (!db || !currentUser) return;
+        if (!date) { alert("请填写面基日期"); return; }
+        await db.collection("pendingMeets").add({
+            userId: currentUser,
+            date: date,
+            notes: notes || "",
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await loadAllData();
+        alert("待绑定面基记录已添加！");
+    }
+
+    // 将待绑定记录绑定到指定群友
+    async function bindMeetupToUser(pendingId, targetUserId) {
+        if (!db || !currentUser) return;
+        if (!targetUserId) { alert("请选择要绑定的群友"); return; }
+        const pendingRef = db.collection("pendingMeets").doc(pendingId);
+        const pendingDoc = await pendingRef.get();
+        if (!pendingDoc.exists) return;
+        const data = pendingDoc.data();
+        // 创建或更新正式面基关系
+        const id1 = currentUser;
+        const id2 = targetUserId;
+        const relationId = id1 < id2 ? `${id1}#${id2}` : `${id2}#${id1}`;
+        const relationRef = db.collection("relations").doc(relationId);
+        const relSnap = await relationRef.get();
+        let meetings = [];
+        if (relSnap.exists) {
+            meetings = relSnap.data().meetings || [];
+        }
+        meetings.push({ date: data.date, notes: data.notes });
+        await relationRef.set({
+            user1: id1,
+            user2: id2,
+            meetings: meetings
+        });
+        // 删除待绑定记录
+        await pendingRef.delete();
+        await loadAllData();
+        alert("面基记录绑定成功！");
+    }
+
+    // 删除待绑定记录
+    async function deletePendingMeetup(pendingId) {
+        if (!db) return;
+        await db.collection("pendingMeets").doc(pendingId).delete();
+        await loadAllData();
+    }
+
     // 绑定事件
     document.getElementById("doLoginBtn").onclick = () => {
         const username = document.getElementById("loginUsername").value;
@@ -759,14 +1112,32 @@ const firebaseConfig = {
     };
     document.getElementById("logoutBtn").onclick = logout;
     document.getElementById("editProfileBtn").onclick = editProfile;
+    document.getElementById("deleteAccountBtn").onclick = () => {
+        const myRelCount = allRelations.filter(rel => rel.user1 === currentUser || rel.user2 === currentUser).length;
+        const myPendingCount = allPendingMeets.length;
+        let warningMsg = `<div class="confirm-warning">
+            ⚠️ <strong>危险操作</strong><br><br>
+            此操作将<strong>永久删除</strong>：<br>
+            • 你的账号 (@${currentUser})<br>
+            • 你的所有面基关系 (${myRelCount} 段)<br>
+            • 你的所有待绑定记录 (${myPendingCount} 条)<br><br>
+            此操作<strong>不可撤销</strong>！
+        </div>`;
+        showConfirmModal('确认删除账号', warningMsg, deleteAccount);
+    };
     document.getElementById("addMeetRecordBtn").onclick = async () => {
         const target = document.getElementById("targetUserSelect").value;
         const date = document.getElementById("meetDate").value;
         const notes = document.getElementById("meetNotes").value;
-        if (!target) { alert("请选择面基对象"); return; }
-        await addMeetRecord(target, date, notes);
+        if (!target) { alert("请选择面基对象或'暂不绑定群友'"); return; }
+        if (target === "__unbound__") {
+            await addUnboundMeetup(date, notes);
+        } else {
+            await addMeetRecord(target, date, notes);
+        }
         document.getElementById("meetDate").value = "";
         document.getElementById("meetNotes").value = "";
+        document.getElementById("targetUserSelect").value = "";
     };
     document.getElementById("viewOtherRecordBtn").onclick = viewOtherRecord;
     // 默认今天日期
