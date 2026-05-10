@@ -89,6 +89,11 @@
             background: #2563eb;
         }
 
+        .login-card button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
         /* 设置新用户内嵌 */
         .setup-profile {
             background: #f8fafc;
@@ -483,8 +488,14 @@
         <i class="fas fa-user-friends" style="font-size: 48px; color: #3b82f6; margin-bottom: 12px;"></i>
         <h2>群友面基站</h2>
         <p style="margin-bottom: 12px;">输入你的名字即可进入 (无需密码)</p>
-        <input type="text" id="loginUsername" placeholder="你的名字, 例如: 小明" autocomplete="off" enterkeyhint="go">
-        <button id="doLoginBtn">进入面基站</button>
+        <form id="loginForm" style="margin:0;" onsubmit="return false;">
+            <input type="text" id="loginUsername" placeholder="你的名字, 例如: 小明" autocomplete="off" enterkeyhint="go" inputmode="text">
+            <div id="loginError" style="display:none; color:#dc2626; font-size:13px; margin:6px 0;"></div>
+            <button type="submit" id="doLoginBtn" style="position:relative;">
+                <span id="loginBtnText">进入面基站</span>
+                <span id="loginBtnLoading" style="display:none;"><i class="fas fa-spinner fa-pulse"></i> 加载中...</span>
+            </button>
+        </form>
         <div style="font-size:12px; margin-top:16px; color:#64748b;">* 新用户自动注册，登录后可设置头像</div>
     </div>
 </div>
@@ -1152,9 +1163,9 @@ const firebaseConfig = {
 
     // 登录主逻辑
     async function login(username) {
-        if (!db) { alert("Firebase未正确配置，请检查config"); return; }
+        if (!db) { throw new Error("Firebase未正确配置"); }
         const originalName = username.trim();
-        if (!originalName) { alert("请输入用户名"); return; }
+        if (!originalName) { throw new Error("请输入用户名"); }
         const docId = originalName.toLowerCase();
         const userDoc = await db.collection("users").doc(docId).get();
         if (!userDoc.exists) {
@@ -1419,10 +1430,32 @@ const firebaseConfig = {
     }
 
     // 绑定事件
-    document.getElementById("doLoginBtn").onclick = () => {
-        const username = document.getElementById("loginUsername").value;
-        login(username);
-    };
+    // 登录表单提交 (支持手机回车键和按钮点击)
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("doLoginBtn");
+        const btnText = document.getElementById("loginBtnText");
+        const btnLoading = document.getElementById("loginBtnLoading");
+        const errorDiv = document.getElementById("loginError");
+
+        // 显示加载状态
+        btn.disabled = true;
+        btnText.style.display = "none";
+        btnLoading.style.display = "";
+        errorDiv.style.display = "none";
+
+        try {
+            const username = document.getElementById("loginUsername").value;
+            await login(username);
+        } catch (err) {
+            console.error("登录失败:", err);
+            errorDiv.textContent = "登录失败: " + (err.message || "请检查网络连接");
+            errorDiv.style.display = "";
+            btn.disabled = false;
+            btnText.style.display = "";
+            btnLoading.style.display = "none";
+        }
+    });
     document.getElementById("logoutBtn").onclick = logout;
     document.getElementById("editProfileBtn").onclick = editProfile;
     document.getElementById("deleteAccountBtn").onclick = () => {
@@ -1468,10 +1501,6 @@ const firebaseConfig = {
     // 默认今天日期
     document.getElementById("meetDate").valueAsDate = new Date();
 
-    // 回车登录
-    document.getElementById("loginUsername").addEventListener("keypress", (e) => {
-        if(e.key === "Enter") document.getElementById("doLoginBtn").click();
-    });
 </script>
 </body>
 </html>
