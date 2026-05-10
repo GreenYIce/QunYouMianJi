@@ -232,13 +232,17 @@
         /* 网格布局: 左侧图表，右侧面板 */
         .dashboard {
             display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 24px;
+            grid-template-columns: minmax(400px, 1fr) 300px;
+            gap: 20px;
         }
 
-        @media (max-width: 800px) {
+        @media (max-width: 900px) {
             .dashboard {
                 grid-template-columns: 1fr;
+            }
+            .right-panel {
+                max-height: none;
+                overflow-y: visible;
             }
         }
 
@@ -247,6 +251,8 @@
             border-radius: 28px;
             padding: 16px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            overflow: hidden;
+            min-width: 0;
         }
 
         .graph-title {
@@ -261,6 +267,7 @@
         #relationChart {
             width: 100%;
             height: 520px;
+            min-height: 400px;
         }
 
         .right-panel {
@@ -664,6 +671,7 @@ const firebaseConfig = {
             }]
         };
         chartInstance.setOption(option, true);
+        chartInstance.resize();
         // 点击事件: 获取节点或边信息
         chartInstance.off('click');
         chartInstance.on('click', (params) => {
@@ -679,6 +687,11 @@ const firebaseConfig = {
             }
         });
     }
+
+    // 窗口大小变化时重绘图表
+    window.addEventListener('resize', () => {
+        if (chartInstance) chartInstance.resize();
+    });
 
     // 展示某个用户的所有面基记录 (模态框或侧边展示)
     async function showUserMeetRecords(username) {
@@ -1054,6 +1067,10 @@ const firebaseConfig = {
         document.getElementById("loginOverlay").style.display = "none";
         document.getElementById("appContainer").style.display = "block";
         refreshCurrentUserDisplay();
+        // 图表可能在 display:none 时初始化，需要 resize
+        setTimeout(() => {
+            if (chartInstance) chartInstance.resize();
+        }, 100);
     }
 
     function logout() {
