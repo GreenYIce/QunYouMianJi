@@ -612,15 +612,37 @@ const firebaseConfig = {
                 id: uid,
                 name: data.nickname || uid,
                 symbolSize: 42,
-                label: { show: true, formatter: data.nickname || uid, fontSize: 12, offset: [0, 15] }
+                itemStyle: { color: color }
             };
             if (data.avatarImage) {
                 nodeConfig.symbol = `image://${data.avatarImage}`;
+                nodeConfig.label = { show: true, formatter: data.nickname || uid, fontSize: 12, offset: [0, 15] };
             } else {
-                nodeConfig.itemStyle = { color: color };
+                // 默认头像显示昵称首字符在大圆内
+                nodeConfig.label = { show: true, formatter: getAvatarChar(data.nickname || uid), position: 'inside', fontSize: 18, color: '#fff', fontWeight: 'bold' };
             }
             nodes.push(nodeConfig);
             nodeMap.set(uid, true);
+        }
+
+        // 添加待绑定面基的临时节点 (仅当前用户可见)
+        if (currentUser && allPendingMeets.length > 0) {
+            for (let pm of allPendingMeets) {
+                const tempNodeId = `__pending__${pm.id}`;
+                const displayName = pm.tempName || '待绑定';
+                const labelName = pm.tempName ? pm.tempName.charAt(0).toUpperCase() : '?';
+                nodes.push({
+                    id: tempNodeId,
+                    name: displayName,
+                    symbolSize: 32,
+                    symbol: 'diamond',
+                    itemStyle: { color: '#fef3c7', borderColor: '#f59e0b', borderWidth: 2, borderType: 'dashed' },
+                    label: { show: true, formatter: labelName, position: 'inside', fontSize: 14, color: '#92400e', fontWeight: 'bold' },
+                    _isPending: true,
+                    _pendingId: pm.id
+                });
+                nodeMap.set(tempNodeId, true);
+            }
         }
         // 构建边
         const links = [];
@@ -642,6 +664,24 @@ const firebaseConfig = {
                 });
             }
         }
+        // 添加待绑定边 (虚线连接当前用户与临时节点)
+        if (currentUser && allPendingMeets.length > 0) {
+            for (let pm of allPendingMeets) {
+                const tempNodeId = `__pending__${pm.id}`;
+                const displayName = pm.tempName || '待绑定';
+                links.push({
+                    source: currentUser,
+                    target: tempNodeId,
+                    label: { show: false },
+                    lineStyle: { width: 2, curveness: 0.2, color: '#fbbf24', type: 'dashed' },
+                    tooltip: `⏳ 待绑定面基\n对象: ${displayName}\n日期: ${pm.date || '未知'}\n备注: ${pm.notes || '无'}\n点击绑定到正式群友`,
+                    meetCount: 0,
+                    relationId: `pending_${pm.id}`,
+                    _isPending: true
+                });
+            }
+        }
+
         const option = {
             title: { show: false },
             tooltip: { trigger: 'item', formatter: (params) => {
@@ -676,13 +716,31 @@ const firebaseConfig = {
         chartInstance.off('click');
         chartInstance.on('click', (params) => {
             if (params.dataType === 'node') {
-                const username = params.data.id;
-                showUserMeetRecords(username);
+                const nodeData = params.data;
+                if (nodeData._isPending) {
+                    // 点击待绑定节点: 显示详情并提示绑定
+                    const pm = allPendingMeets.find(p => p.id === nodeData._pendingId);
+                    if (pm) {
+                        showPendingMeetDetail(pm);
+                    }
+                } else {
+                    const username = nodeData.id;
+                    showUserMeetRecords(username);
+                }
             } else if (params.dataType === 'edge') {
-                const relationId = params.data.relationId;
-                const relation = allRelations.find(r => r.id === relationId);
-                if (relation) {
-                    showRelationDetailModal(relation);
+                const edgeData = params.data;
+                if (edgeData._isPending) {
+                    const pendingId = edgeData.relationId.replace('pending_', '');
+                    const pm = allPendingMeets.find(p => p.id === pendingId);
+                    if (pm) {
+                        showPendingMeetDetail(pm);
+                    }
+                } else {
+                    const relationId = edgeData.relationId;
+                    const relation = allRelations.find(r => r.id === relationId);
+                    if (relation) {
+                        showRelationDetailModal(relation);
+                    }
                 }
             }
         });
@@ -764,6 +822,58 @@ const firebaseConfig = {
                     if (confirm(`确定要删除与对方的全部面基记录吗？此操作不可撤销。`)) {
                         const modal = deleteAllBtn.closest('.modal');
                         await deleteEntireRelation(relation.id);
+                        if (modal) modal.remove();
+                    }
+                };
+            }
+        }, 50);
+    }
+
+    // 显示待绑定面基详情
+    function showPendingMeetDetail(pm) {
+        const displayName = pm.tempName || '未命名';
+        let otherUserOptions = '';
+        for (let [uid, data] of allUsersMap.entries()) {
+            if (uid !== currentUser) {
+                otherUserOptions += `<option value="${uid}">${data.nickname || uid}</option>`;
+            }
+        }
+        const content = `
+            <div style="background:#fffbeb; border:1px dashed #fcd34d; border-radius:16px; padding:12px; margin-bottom:12px;">
+                <strong>⏳ 待绑定面基记录</strong><br>
+                <span>👤 对象: <strong style="color:#d97706;">${displayName}</strong></span><br>
+                <span>📅 日期: ${pm.date || '无日期'}</span><br>
+                <span>📝 备注: ${pm.notes || '无'}</span>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:8px;">
+                <select id="pendingDetailBindSelect" style="flex:1; font-size:13px; padding:6px 10px; border-radius:16px;">
+                    <option value="">选择正式群友进行绑定</option>
+                    ${otherUserOptions}
+                </select>
+                <button id="pendingDetailBindBtn" class="bind-btn" style="font-size:13px; padding:6px 14px;"><i class="fas fa-link"></i> 绑定</button>
+            </div>
+            <button id="pendingDetailDeleteBtn" class="danger-btn" style="margin-top:12px;"><i class="fas fa-trash-alt"></i> 删除此记录</button>
+        `;
+        showModal("待绑定面基详情", content);
+        // 绑定事件
+        setTimeout(() => {
+            const bindBtn = document.getElementById('pendingDetailBindBtn');
+            const bindSelect = document.getElementById('pendingDetailBindSelect');
+            const deleteBtn = document.getElementById('pendingDetailDeleteBtn');
+            if (bindBtn && bindSelect) {
+                bindBtn.onclick = async () => {
+                    const target = bindSelect.value;
+                    if (!target) { alert("请选择要绑定的群友"); return; }
+                    const modal = bindBtn.closest('.modal');
+                    await bindMeetupToUser(pm.id, target);
+                    if (modal) modal.remove();
+                };
+            }
+            if (deleteBtn) {
+                deleteBtn.onclick = async () => {
+                    if (confirm("确定删除此待绑定记录？")) {
+                        const modal = deleteBtn.closest('.modal');
+                        await deletePendingMeetup(pm.id);
                         if (modal) modal.remove();
                     }
                 };
