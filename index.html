@@ -482,10 +482,10 @@
     <div class="login-card">
         <i class="fas fa-user-friends" style="font-size: 48px; color: #3b82f6; margin-bottom: 12px;"></i>
         <h2>群友面基站</h2>
-        <p style="margin-bottom: 12px;">输入你的用户名 (无需密码)</p>
-        <input type="text" id="loginUsername" placeholder="用户名, 例如: 小明" autocomplete="off">
-        <button id="doLoginBtn">登录 / 注册</button>
-        <div style="font-size:12px; margin-top:16px; color:#64748b;">* 新用户初次登录将引导设置昵称和头像</div>
+        <p style="margin-bottom: 12px;">输入你的名字即可进入 (无需密码)</p>
+        <input type="text" id="loginUsername" placeholder="你的名字, 例如: 小明" autocomplete="off" enterkeyhint="go">
+        <button id="doLoginBtn">进入面基站</button>
+        <div style="font-size:12px; margin-top:16px; color:#64748b;">* 新用户自动注册，登录后可设置头像</div>
     </div>
 </div>
 
@@ -1153,22 +1153,21 @@ const firebaseConfig = {
     // 登录主逻辑
     async function login(username) {
         if (!db) { alert("Firebase未正确配置，请检查config"); return; }
-        const trimmed = username.trim().toLowerCase();
-        if (!trimmed) { alert("请输入用户名"); return; }
-        const userDoc = await db.collection("users").doc(trimmed).get();
+        const originalName = username.trim();
+        if (!originalName) { alert("请输入用户名"); return; }
+        const docId = originalName.toLowerCase();
+        const userDoc = await db.collection("users").doc(docId).get();
         if (!userDoc.exists) {
-            // 新用户引导设置面板
-            const newNick = prompt("欢迎新群友！请输入你的昵称:", trimmed);
-            if (!newNick) return;
-            const avatarColor = getRandomColor(trimmed.length);
-            await db.collection("users").doc(trimmed).set({
-                nickname: newNick,
+            // 新用户: 用户名即昵称，无需额外步骤
+            const avatarColor = getRandomColor(docId.length);
+            await db.collection("users").doc(docId).set({
+                nickname: originalName,
                 avatarColor: avatarColor
             });
-            currentUser = trimmed;
-            currentUserData = { nickname: newNick, avatarColor };
+            currentUser = docId;
+            currentUserData = { nickname: originalName, avatarColor };
         } else {
-            currentUser = trimmed;
+            currentUser = docId;
             currentUserData = userDoc.data();
         }
         // 加载全局数据并刷新
